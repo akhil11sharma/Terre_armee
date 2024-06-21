@@ -6,6 +6,8 @@ from tkinter import ttk, filedialog
 from openpyxl.styles import PatternFill
 
 def display_excel(file_path):
+
+
     # Load Excel workbook
     workbook = openpyxl.load_workbook(file_path, data_only=True)
     sheet = workbook.active
@@ -25,6 +27,7 @@ def display_excel(file_path):
             seen_headers.add(header)
         else:
             headers.append("")
+
 
     # Extract data from all rows
     data = []
@@ -107,6 +110,8 @@ def get_formula_columns(file_path):
     return formula_columns, formula_columns_indices
 
 def check_and_highlight_non_formula_cells(file_path):
+
+
     # Load Excel workbook
     workbook = openpyxl.load_workbook(file_path, data_only=False)
     sheet = workbook.active
@@ -125,7 +130,7 @@ def check_and_highlight_non_formula_cells(file_path):
 
     all_columns = list(sheet.iter_cols(1, sheet.max_column))
 
-    highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")#will give yellow highlight
 
     for col_idx in formula_columns_indices:
         for row_idx, cell in enumerate(all_columns[col_idx], start=1):
@@ -144,5 +149,5 @@ def check_and_highlight_non_formula_cells(file_path):
 
 if __name__ == "__main__":
     file_path = r"C:\Users\Nikhil Sharma\Desktop\SSMS\areaCalculationSheet.xlsx"  # Replace with your file path
-    display_excel(file_path)
-    check_and_highlight_non_formula_cells(file_path)
+    display_excel(file_path)#displying on TKinter window
+    check_and_highlight_non_formula_cells(file_path)#for conditional formating one excel
