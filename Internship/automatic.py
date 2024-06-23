@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox, filedialog
 import threading
 import time
 
+# Database configuration details
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
@@ -16,6 +17,7 @@ DB_CONFIG = {
 
 def execute_query(query, params=None, fetch=False):
     try:
+        # Establish a connection to the MySQL database
         mydb = mysql.connector.connect(**DB_CONFIG)
         cursor = mydb.cursor()
         cursor.execute(query, params)
@@ -32,11 +34,13 @@ def execute_query(query, params=None, fetch=False):
             mydb.close()
 
 def load_table_columns(table_name):
+    # Retrieve columns for the specified table
     columns_query = f"SHOW COLUMNS FROM `{table_name}`"
     columns = execute_query(columns_query, fetch=True)
     return [col[0] for col in columns]
 
 def create_table_information_table(cursor):
+    # Create a table to store information about other tables
     create_table_info_sql = """
     CREATE TABLE IF NOT EXISTS table_information (
         table_name VARCHAR(255) NOT NULL PRIMARY KEY,
@@ -47,6 +51,7 @@ def create_table_information_table(cursor):
     cursor.execute(create_table_info_sql)
 
 def insert_table_information(cursor, table_name, column_count, row_count):
+    # Insert information about a table into the table_information table
     insert_sql = """
     INSERT INTO table_information (table_name, column_count, row_count) 
     VALUES (%s, %s, %s)
@@ -56,6 +61,7 @@ def insert_table_information(cursor, table_name, column_count, row_count):
     cursor.execute(insert_sql, (table_name, column_count, row_count, column_count, row_count))
 
 def compare_table_columns(cursor, table_name, expected_columns):
+    # Compare the columns in the table with the expected columns
     cursor.execute(f"DESCRIBE `{table_name}`")
     existing_columns = [row[0] for row in cursor.fetchall()]
     
@@ -69,11 +75,13 @@ def compare_table_columns(cursor, table_name, expected_columns):
         print(f"Missing columns in table '{table_name}': {missing_columns}")
 
 def process_files(cursor, folder_path):
+    # Process each file in the specified folder
     for filename in os.listdir(folder_path):
         file_path = os.path.join(folder_path, filename)
         table_name = os.path.splitext(filename)[0]
         
         if filename.endswith('.csv'):
+            # Process CSV files
             with open(file_path, 'r', newline='', encoding='utf-8') as csvfile:
                 csvreader = csv.reader(csvfile)
                 columns = next(csvreader)
@@ -93,6 +101,7 @@ def process_files(cursor, folder_path):
                 print(f"Table '{table_name}' replaced with new data from CSV.")
                     
         elif filename.endswith('.xlsx'):
+            # Process Excel files
             with pd.ExcelFile(file_path) as xls:
                 for sheet_name in xls.sheet_names:
                     df = pd.read_excel(xls, sheet_name=sheet_name)
@@ -113,14 +122,17 @@ def process_files(cursor, folder_path):
                     print(f"Table '{table_name}' replaced with new data from Excel sheet.")
 
 def table_exists(cursor, table_name):
+    # Check if the table exists in the database
     cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
     result = cursor.fetchone()
     return result is not None
 
 def drop_table(cursor, table_name):
+    # Drop the table if it exists
     cursor.execute(f"DROP TABLE IF EXISTS `{table_name}`")
 
 def create_table(cursor, table_name, columns):
+    # Create a new table with the specified columns
     columns = [col.strip() for col in columns if col.strip()]  
     create_table_sql = f"""
     CREATE TABLE `{table_name}` (
@@ -130,21 +142,24 @@ def create_table(cursor, table_name, columns):
     cursor.execute(create_table_sql)
 
 def insert_data_into_table(cursor, table_name, columns, data):
+    # Insert data into the table
     placeholders = ', '.join(['%s'] * len(columns))
     insert_sql = f"INSERT INTO `{table_name}` ({', '.join([f'`{col}`' for col in columns])}) VALUES ({placeholders})"
     cursor.executemany(insert_sql, data)
 
 def fetch_data_from_table(cursor, table_name):
+    # Fetch all data from the specified table
     cursor.execute(f"SELECT * FROM `{table_name}`")
     rows = cursor.fetchall()
     return {tuple(row): row for row in rows}
 
 def main():
     try:
+        # Establish a connection to the MySQL database
         mydb = mysql.connector.connect(**DB_CONFIG)
         cursor = mydb.cursor()
         create_table_information_table(cursor)
-        folder_path = r'C:\Users\Nikhil Sharma\Desktop\testing'  
+        folder_path = r'C:\Users\Nikhil Sharma\Desktop\testing'  # Folder path to monitor
 
         while True:
             process_files(cursor, folder_path)
@@ -166,9 +181,11 @@ def add_entry_fields():
     for widget in entry_frame.winfo_children():
         widget.destroy()
 
+    # Load the columns of the selected table
     columns = load_table_columns(selected_table.get())
     entry_vars = {}
 
+    # Create entry fields for each column
     for i, column in enumerate(columns):
         tk.Label(entry_frame, text=column).grid(row=0, column=i, padx=10, pady=5)
         entry_var = tk.StringVar()
@@ -176,6 +193,7 @@ def add_entry_fields():
         entry = tk.Entry(entry_frame, textvariable=entry_var)
         entry.grid(row=1, column=i, padx=10, pady=5)
 
+    # Add buttons for adding, updating, deleting records, and saving to CSV
     add_button = tk.Button(entry_frame, text="Add Record", command=add_record)
     update_button = tk.Button(entry_frame, text="Update Record", command=update_record)
     delete_button = tk.Button(entry_frame, text="Delete Record", command=delete_record)
@@ -263,10 +281,11 @@ def save_to_csv():
 
 def main_file_processor():
     try:
+        # Establish a connection to the MySQL database
         mydb = mysql.connector.connect(**DB_CONFIG)
         cursor = mydb.cursor()
         create_table_information_table(cursor)
-        folder_path = r'C:\Users\Nikhil Sharma\Desktop\testing'  
+        folder_path = r'C:\Users\Nikhil Sharma\Desktop\testing'  # Folder path to monitor
 
         while True:
             process_files(cursor, folder_path)
@@ -291,6 +310,7 @@ def main():
     frame = tk.Frame(root)
     frame.pack(pady=20)
 
+    # Dropdown menu to select table
     selected_table = tk.StringVar()
     table_list = execute_query("SHOW TABLES", fetch=True)
     table_names = [table[0] for table in table_list]
@@ -303,6 +323,7 @@ def main():
     entry_frame = tk.Frame(frame)
     entry_frame.grid(row=1, column=0, columnspan=2, pady=10)
 
+    # Frame to hold the table data view
     tree_frame = tk.Frame(root)
     tree_frame.pack(padx=20, pady=10)
     tree_scroll = ttk.Scrollbar(tree_frame)
@@ -319,6 +340,6 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
+    # Start the file processor in a separate thread
     threading.Thread(target=main_file_processor).start()
     main()
-
