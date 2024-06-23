@@ -6,15 +6,19 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 def extract_formulas(file_path):
+    # Load the Excel workbook and select the active sheet
     workbook = openpyxl.load_workbook(file_path, data_only=False)
     sheet = workbook.active
 
     formulas = []
+    # Extract headers from the first row
     headers = [cell.value for cell in next(sheet.iter_rows())]
 
+    # Iterate through the rows to find cells with formulas
     for row_index, row in enumerate(sheet.iter_rows(min_row=2)):
         for col_index, cell in enumerate(row):
             if cell.data_type == 'f':
+                # Collect information about each formula
                 formula_info = {
                     'Formula': cell.value,
                     'Header': headers[col_index],
@@ -24,10 +28,10 @@ def extract_formulas(file_path):
                 formulas.append(formula_info)
 
     workbook.close()
-
     return formulas
 
 def replace_with_headers(formula, headers):
+    # Find all column references in the formula
     column_references = re.findall(r'([A-Za-z]+)(\d+)', formula)
     replaced_formula = formula
 
@@ -37,11 +41,13 @@ def replace_with_headers(formula, headers):
 
         if col_index < len(headers) and headers[col_index]:
             header_name = headers[col_index]
+            # Replace cell references with header names
             replaced_formula = replaced_formula.replace(f"{col_ref}{row_num}", header_name)
 
     return replaced_formula
 
 def table_exists(cursor, table_name):
+    # Check if the specified table exists in the database
     cursor.execute(f'''
         SELECT COUNT(*)
         FROM information_schema.tables
@@ -50,6 +56,7 @@ def table_exists(cursor, table_name):
     return cursor.fetchone()[0] == 1
 
 def create_tracking_table_if_not_exists(cursor):
+    # Create the tracking table if it does not exist
     cursor.execute(f'''
         IF NOT EXISTS (SELECT * FROM sys.tables WHERE name='areaCalculationSheet_Formulas')
         BEGIN
@@ -71,6 +78,7 @@ def update_existing_table(cursor, table_name, formulas):
         cell_name = formula_info['CellName']
         involved_columns = formula_info['InvolvedColumns']
 
+        # Update the existing record if it exists, otherwise insert a new record
         cursor.execute(f'''
             IF EXISTS (SELECT * FROM areaCalculationSheet_Formulas WHERE CellName = ? AND Table_Name = ?)
             BEGIN
@@ -86,45 +94,52 @@ def update_existing_table(cursor, table_name, formulas):
         ''', (cell_name, table_name, formula, header, involved_columns, cell_name, table_name, formula, header, cell_name, involved_columns, table_name))
 
 def store_in_database(formulas, table_name, db_config):
+    # Establish a connection to the SQL Server database
     conn_str = f"DRIVER={{SQL Server}};SERVER={db_config['server']};DATABASE={db_config['database']};trusted_connection={db_config['trusted_connection']}"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
 
+    # Ensure the tracking table exists
     create_tracking_table_if_not_exists(cursor)
 
+    # Insert or update the extracted formulas in the database
     update_existing_table(cursor, table_name, formulas)
 
     cursor.commit()
     conn.close()
 
 def process_file(file_path, db_config):
+    # Extract the file name without extension
     file_name = os.path.splitext(os.path.basename(file_path))[0]
+    # Extract formulas from the Excel file
     formulas = extract_formulas(file_path)
 
     if formulas:
+        # Store the extracted formulas in the database
         store_in_database(formulas, file_name, db_config)
         return f"File '{file_path}' successfully processed and data stored in table 'areaCalculationSheet_Formulas' under '{file_name}'."
     else:
         return "No formulas found in the Excel sheet."
 
 def select_file():
+    # Open a file dialog to select an Excel file
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
     if file_path:
+        # Process the selected file
         message = process_file(file_path, db_config)
         messagebox.showinfo("Process Completed", message)
     else:
         messagebox.showwarning("File Selection", "No file selected.")
 
-def set_theme(mode):
-    pass
-
 if __name__ == "__main__":
+    # Database configuration details
     db_config = {
         'server': 'DESKTOP-PLHJ2M7',
         'database': 'test',
         'trusted_connection': 'yes'
     }
 
+    # Create the main application window
     root = tk.Tk()
     root.title("Formula Extraction")
     root.geometry("400x400")
@@ -132,12 +147,16 @@ if __name__ == "__main__":
     frame = ttk.Frame(root, padding="20")
     frame.pack(fill=tk.BOTH, expand=True)
 
+    # Add a button to select an Excel file
     select_button = ttk.Button(frame, text="Select Excel File", command=select_file)
     select_button.pack(pady=10)
 
+    # Label to display the selected file path
     selected_file_label = ttk.Label(frame, text="Selected File: None", anchor="w")
     selected_file_label.pack(fill=tk.X, pady=5)
+    # Status bar for displaying messages
     status_bar = ttk.Label(frame, text="", anchor="w")
     status_bar.pack(fill=tk.X)
 
+    # Run the Tkinter event loop
     root.mainloop()
