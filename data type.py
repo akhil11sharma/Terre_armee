@@ -1,7 +1,7 @@
 import openpyxl #lib to acess excel
 import csv
 import pyodbc#for excessing SSMS Server
-import os
+import os #for making changes in CSV/Excel
 
 def parse_excel_or_csv(file_path):
     tables = []
