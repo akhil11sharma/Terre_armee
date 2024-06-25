@@ -4,50 +4,63 @@ import os
 import re
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from tkinter import Canvas, Scrollbar
 
 def extract_formulas(file_path):
-    # Load the workbook and get the active sheet
     workbook = openpyxl.load_workbook(file_path, data_only=False)
-    sheet = workbook.active
-
     formulas = []
-    # Extract the headers from the first row
-    headers = [cell.value for cell in next(sheet.iter_rows())]
 
-    # Iterate over the rows to find cells containing formulas
-    for row_index, row in enumerate(sheet.iter_rows(min_row=2)):
-        for col_index, cell in enumerate(row):
-            if cell.data_type == 'f':  # Check if the cell contains a formula
-                formula_info = {
-                    'Formula': cell.value,
-                    'Header': headers[col_index],
-                    'CellName': cell.coordinate,
-                    'InvolvedColumns': replace_with_headers(cell.value, headers)
-                }
-                formulas.append(formula_info)
+    for sheet_name in workbook.sheetnames:
+        sheet = workbook[sheet_name]
+        headers = [cell.value for cell in next(sheet.iter_rows())]
+
+        for row_index, row in enumerate(sheet.iter_rows(min_row=2)):
+            for col_index, cell in enumerate(row):
+                if cell.data_type == 'f':
+                    formula_info = {
+                        'Formula': cell.value,
+                        'Header': headers[col_index],
+                        'CellName': cell.coordinate,
+                        'InvolvedColumns': replace_with_headers(cell.value, headers, workbook, sheet_name)
+                    }
+                    formulas.append(formula_info)
 
     workbook.close()
+
     return formulas
 
-def replace_with_headers(formula, headers):
-    # Find all column references in the formula
+def replace_with_headers(formula, headers, workbook, current_sheet_name):
     column_references = re.findall(r'([A-Za-z]+)(\d+)', formula)
     replaced_formula = formula
 
-    # Replace column references with header names
     for col_ref, row_num in column_references:
-        column_name = col_ref.upper()
-        col_index = openpyxl.utils.cell.column_index_from_string(column_name) - 1
+        if col_ref.isalpha():  # Check if it's a valid column reference
+            column_name = col_ref.upper()
+            try:
+                col_index = openpyxl.utils.cell.column_index_from_string(column_name) - 1
 
-        if col_index < len(headers) and headers[col_index]:
-            header_name = headers[col_index]
-            replaced_formula = replaced_formula.replace(f"{col_ref}{row_num}", header_name)
+                if col_index < len(headers) and headers[col_index]:
+                    header_name = headers[col_index]
+                    replaced_formula = replaced_formula.replace(f"{col_ref}{row_num}", header_name)
+                else:
+                    # Handle cross-sheet references
+                    replaced_formula = replaced_formula.replace(f"{col_ref}{row_num}", f"[{workbook[current_sheet_name].title}]!")
+            except ValueError:
+                # Handle cases where column_index_from_string fails (invalid column reference)
+                # This may happen if the reference is not a valid column but something else
+                # Try to find the reference in other sheets
+                for sheet in workbook.sheetnames:
+                    if f"{sheet}!" in formula:
+                        replaced_formula = replaced_formula.replace(f"{sheet}!", f"[{workbook[sheet].title}]!")
+        else:
+            # Handle cases where the reference is not a column but possibly a sheet name or invalid reference
+            # Try to find the reference in other sheets
+            for sheet in workbook.sheetnames:
+                if f"{sheet}!" in formula:
+                    replaced_formula = replaced_formula.replace(f"{sheet}!", f"[{workbook[sheet].title}]!")
 
     return replaced_formula
 
 def table_exists(cursor, table_name):
-    # Check if the table exists in the database
     cursor.execute(f'''
         SELECT COUNT(*)
         FROM information_schema.tables
@@ -56,7 +69,6 @@ def table_exists(cursor, table_name):
     return cursor.fetchone()[0] == 1
 
 def create_tracking_table_if_not_exists(cursor):
-    # Create the tracking table if it does not exist
     cursor.execute(f'''
         IF NOT EXISTS (SELECT * FROM sys.tables WHERE name='areaCalculationSheet_Formulas')
         BEGIN
@@ -72,7 +84,6 @@ def create_tracking_table_if_not_exists(cursor):
     ''')
 
 def update_existing_table(cursor, table_name, formulas):
-    # Update the existing table with formula data or insert new records
     for formula_info in formulas:
         formula = formula_info['Formula']
         header = formula_info['Header']
@@ -93,23 +104,39 @@ def update_existing_table(cursor, table_name, formulas):
             END
         ''', (cell_name, table_name, formula, header, involved_columns, cell_name, table_name, formula, header, cell_name, involved_columns, table_name))
 
+def create_view_if_not_exists(cursor):
+    cursor.execute('''
+        IF OBJECT_ID('areaCalculationSheet_Formulas_View', 'V') IS NULL
+        BEGIN
+            EXEC sp_executesql N'
+                CREATE VIEW areaCalculationSheet_Formulas_View AS
+                SELECT 
+                    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS [S.NO],
+                    CellName AS [Cell_Name],
+                    Column_Header AS [Column_Header],
+                    Formula AS [Formula],
+                    Involved_Columns AS [Involved_Formula],
+                    Table_Name AS [Table_Name]
+                FROM 
+                    areaCalculationSheet_Formulas
+            ';
+            PRINT 'View created successfully: areaCalculationSheet_Formulas_View';
+        END
+    ''')
+
 def store_in_database(formulas, table_name, db_config):
-    # Connect to the database using the provided configuration
     conn_str = f"DRIVER={{SQL Server}};SERVER={db_config['server']};DATABASE={db_config['database']};trusted_connection={db_config['trusted_connection']}"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
 
-    # Ensure the tracking table exists
     create_tracking_table_if_not_exists(cursor)
-
-    # Store the extracted formulas in the database
     update_existing_table(cursor, table_name, formulas)
+    create_view_if_not_exists(cursor)
 
     cursor.commit()
     conn.close()
 
 def process_file(file_path, db_config):
-    # Extract the file name without extension for table name
     file_name = os.path.splitext(os.path.basename(file_path))[0]
     formulas = extract_formulas(file_path)
 
@@ -120,20 +147,17 @@ def process_file(file_path, db_config):
         return "No formulas found in the Excel sheet."
 
 def select_file():
-    # Open a file dialog to select the Excel file
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx *.xls")])
     if file_path:
         selected_file_label.config(text=f"Selected File: {file_path}")
         execute_button.pack()
 
 def execute_process():
-    # Execute the process of extracting and storing formulas
     file_path = selected_file_label.cget("text").split(": ")[1]  # Get the selected file path
     message = process_file(file_path, db_config)
     messagebox.showinfo("Process Completed", message)
 
 def display_initial_screen():
-    # Display the initial screen of the GUI
     for widget in frame.winfo_children():
         widget.destroy()
 
@@ -151,27 +175,22 @@ def display_initial_screen():
     execute_button = ttk.Button(frame, text="Execute", style="Accent.TButton", command=execute_process)
 
 if __name__ == "__main__":
-    # Database configuration for connecting to SQL Server
     db_config = {
         'server': 'DESKTOP-PLHJ2M7',
         'database': 'test',
         'trusted_connection': 'yes'
     }
 
-    # Setting up the main Tkinter window
     root = tk.Tk()
     root.title("Formula Extraction")
     root.geometry("600x300")
 
-    # Setting up the main frame and styling
     frame = ttk.Frame(root, padding="20")
     frame.pack(fill=tk.BOTH, expand=True)
 
     style = ttk.Style()
     style.configure("Accent.TButton", foreground="black", background="orange", font=("Helvetica", 12))
 
-    # Display the initial screen
     display_initial_screen()
 
-    # Start the Tkinter event loop
     root.mainloop()
