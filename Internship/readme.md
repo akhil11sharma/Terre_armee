@@ -1,7 +1,3 @@
-Here's a draft of a README for your repository:
-
----
-
 # Terre_armee Internship Project
 
 ## Table of Contents
@@ -92,5 +88,3 @@ Contributions are welcome! Please fork the repository and create a pull request 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
-
-Feel free to modify and expand this README as needed.
